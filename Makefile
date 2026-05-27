@@ -121,3 +121,6 @@ clean: ## Stop services and remove data (destructive)
 
 generate-key: ## Generate a new 64-character encryption key
 	@openssl rand -hex 32
+
+export-images: ## Export Docker images to ./images directory for offline use
+	@./scripts/export-images.sh

@@ -60,6 +60,10 @@
 /dependencies/mongodb-data/*
 !/dependencies/mongodb-data/.gitkeep
 
+# local docker images (tar files)
+/images/*.tar
+!/images/.gitkeep
+
 # os generated files
 .DS_Store
 .DS_Store?

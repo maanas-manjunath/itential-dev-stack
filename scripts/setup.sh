@@ -37,6 +37,36 @@ check_images_present() {
     return 0
 }
 
+# load images from ./images directory
+load_local_images() {
+    local images_dir="$PROJECT_ROOT/images"
+
+    if [ ! -d "$images_dir" ]; then
+        log_warn "Images directory not found: $images_dir"
+        return 1
+    fi
+
+    local tar_files=("$images_dir"/*.tar)
+    if [ ! -e "${tar_files[0]}" ]; then
+        log_warn "No .tar files found in $images_dir"
+        return 1
+    fi
+
+    log_info "Loading images from $images_dir..."
+    for tar_file in "$images_dir"/*.tar; do
+        if [ -f "$tar_file" ]; then
+            log_info "Loading $(basename "$tar_file")..."
+            if docker load -i "$tar_file" &>/dev/null; then
+                log_info "Loaded: $(basename "$tar_file")"
+            else
+                log_error "Failed to load: $(basename "$tar_file")"
+                return 1
+            fi
+        fi
+    done
+    return 0
+}
+
 cd "$PROJECT_ROOT"
 
 echo -e "${BLUE}"
@@ -71,8 +101,10 @@ if check_images_present; then
     IMAGES_PRESENT=true
 fi
 
-# aws cli (only if images need pulling)
-if [ "$IMAGES_PRESENT" = false ]; then
+# aws cli (only if images need pulling and not using local images)
+if [ "$USE_LOCAL_IMAGES" = "true" ]; then
+    log_info "AWS CLI: skipped (using local images)"
+elif [ "$IMAGES_PRESENT" = false ]; then
     if ! command -v aws &>/dev/null; then
         log_error "AWS CLI is not installed. Required for ECR authentication."
         exit 1
@@ -125,25 +157,35 @@ fi
 # load env
 source "$PROJECT_ROOT/.env"
 
-log_section "aws ecr authentication"
+log_section "image management"
 
-# extract registry from PLATFORM_IMAGE (everything before the first /)
-ECR_REGISTRY="${PLATFORM_IMAGE%%/*}"
-
-if [ "$IMAGES_PRESENT" = true ]; then
-    log_info "All required images already present locally, skipping ECR authentication"
-elif [[ "$ECR_REGISTRY" == *".ecr."*".amazonaws.com" ]]; then
-    log_info "Authenticating with AWS ECR..."
-    if aws ecr get-login-password --region us-east-2 2>/dev/null | \
-       docker login --username AWS --password-stdin "$ECR_REGISTRY" &>/dev/null; then
-        log_info "ECR authentication successful"
+if [ "$USE_LOCAL_IMAGES" = "true" ]; then
+    log_info "Loading images from local directory..."
+    if load_local_images; then
+        log_info "Local images loaded successfully"
     else
-        log_error "ECR authentication failed. Check your AWS credentials."
-        log_info "Run: aws configure"
+        log_error "Failed to load local images. Check ./images directory."
         exit 1
     fi
 else
-    log_info "Non-ECR registry detected ($ECR_REGISTRY), skipping AWS authentication"
+    # extract registry from PLATFORM_IMAGE (everything before the first /)
+    ECR_REGISTRY="${PLATFORM_IMAGE%%/*}"
+
+    if [ "$IMAGES_PRESENT" = true ]; then
+        log_info "All required images already present locally, skipping ECR authentication"
+    elif [[ "$ECR_REGISTRY" == *".ecr."*".amazonaws.com" ]]; then
+        log_info "Authenticating with AWS ECR..."
+        if aws ecr get-login-password --region us-east-2 2>/dev/null | \
+           docker login --username AWS --password-stdin "$ECR_REGISTRY" &>/dev/null; then
+            log_info "ECR authentication successful"
+        else
+            log_error "ECR authentication failed. Check your AWS credentials."
+            log_info "Run: aws configure"
+            exit 1
+        fi
+    else
+        log_info "Non-ECR registry detected ($ECR_REGISTRY), skipping AWS authentication"
+    fi
 fi
 
 log_section "certificate generation"
