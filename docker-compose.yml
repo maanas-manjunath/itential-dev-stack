@@ -124,6 +124,9 @@ services:
       - "${BIND_ADDRESS}${GATEWAY_MANAGER_PORT:-8080}:8080"
     volumes:
       - type: bind
+        source: ./license.txt
+        target: /opt/itential/platform/server/license.txt
+      - type: bind
         source: ./volumes/platform/adapters
         target: /opt/itential/platform/services/custom
         read_only: true
